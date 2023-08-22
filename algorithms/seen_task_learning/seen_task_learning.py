@@ -228,7 +228,7 @@ class SeenTaskLearning:
         print("_task_remodeling: ",ClassType.STP,method_name)
         print("self.seen_models: ",self.seen_models)
         method_cls = ClassFactory.get_cls(ClassType.STP, method_name)(
-            models=self.seen_models, **extend_param)#看一下每次到这里的models
+            models=self.seen_models, **extend_param)
         return method_cls(samples=samples, mappings=mappings)
 
     def _inference_integrate(self, tasks):
@@ -244,7 +244,8 @@ class SeenTaskLearning:
 
     def _task_process(
             self,
-            task_groups,source_model_url,
+            task_groups,
+            source_model_url,
             train_data=None,
             valid_data=None,
             callback=None,
@@ -252,17 +253,21 @@ class SeenTaskLearning:
         """
         Train seen task samples based on grouped tasks.
         """
+        print("------------------ 3. processing task-specific model training! ------------------")
+        
         feedback = {}
         rare_task = []
-        for i, task in enumerate(task_groups):#task_groups是一个列表，每个元素是一个task_group
-            import pdb
-            #pdb.set_trace()
+        print("Total tasks: ", len(task_groups))
+        import pdb
+        # pdb.set_trace()
+        for i, task in enumerate(task_groups): # task_groups是一个列表，每个元素是一个task_group
             if not isinstance(task, TaskGroup):#--------------------检测是否是少样本任务-----------
                 rare_task.append(i)
                 self.seen_models.append(None)
                 self.seen_task_groups.append(None)
                 continue
-            if not (task.samples and len(task.samples)#(Pdb) len(task_groups[0].samples):10   (Pdb) len(task_groups[1].samples):2     (Pdb) len(task_groups[2].samples):8
+            # (Pdb) len(task_groups[0].samples):10   (Pdb) len(task_groups[1].samples):2     (Pdb) len(task_groups[2].samples):8
+            if not (task.samples and len(task.samples)
                     >= self.min_train_sample):
                 self.seen_models.append(None)
                 self.seen_task_groups.append(None)
@@ -272,9 +277,10 @@ class SeenTaskLearning:
                 continue
             LOGGER.info(f"MTL Train start {i} : {task.entry}")
 
+            # ------------------ 检测该任务是否已被训练过 ------------------
             model = None
-            for t in task.tasks: #task是TaskGroup类，task.tasks是 Task类#--------------------检测该任务是否已被训练过---------------
-                #print("----------------here1-------------------")
+            for t in task.tasks: # task是TaskGroup类，task.tasks是 Task类
+                # print("----------------here1-------------------")
                 if not (t.model and t.result):
                     continue
                 if isinstance(t.model, str):
@@ -287,42 +293,43 @@ class SeenTaskLearning:
                               model=model_path, result=t.result)
                 model.meta_attr = t.meta_attr
                 break
+
             if not model:
-                model_obj = set_backend(estimator=self.base_model)#初始训练，所以直接用basemodel的结构和权重
+                model_obj = set_backend(estimator=self.base_model)
+              
+                kwargs["model_url"] = source_model_url # 基于全局模型的权重初始化各个任务模型的权重
+                kwargs["frozen"] = True # 主要影响学习率设置
+                kwargs["Early_stop"] = True # 使用微调训练机制
+                # import pdb
+                # pdb.set_trace()
                 
-                kwargs["model_url"]=source_model_url
-                kwargs["frozen"]=True
-                kwargs["Early_stop"]=True
-                import pdb
-                #pdb.set_trace()
-                
-                eval_data=BaseDataSource(data_type="valid")
-                eval_data.x, eval_data.y=[], []
-                for i in range(valid_data.num_examples()):
-                    eval_data.x.append(valid_data.x[i])
-                    eval_data.y.append(valid_data.y[i])
+                eval_data = BaseDataSource(data_type="valid")
+                eval_data.x, eval_data.y = [], []
+                for j in range(valid_data.num_examples()):
+                    eval_data.x.append(valid_data.x[j])
+                    eval_data.y.append(valid_data.y[j])
                     
-                #pdb.set_trace()
-                
-                res = model_obj.train(train_data=task.samples, valid_data=eval_data, **kwargs)#res: 'cityscapes/RFNet/experiment_10/checkpoint_1687784775.7264986.pth' # basemodel.train()
+                print("------------------ 3. processing task-specific model training, current task: task%s! ------------------"%(i))
+                res = model_obj.train(train_data=task.samples, valid_data=eval_data, **kwargs)
+                print("------------------ 3. current task%s training finished, the according path is %s! ------------------"%(i, res))
+                # pdb.set_trace()
                 if callback:
                     res = callback(model_obj, res)
                 if isinstance(res, str):
                     model_path = model_obj.save(model_name=f"{task.entry}.pth")
                     model = Model(index=i, entry=task.entry,
+                                # model=model_path, result=res)
                                 model=model_path, result={})
                 else:
-                    model_path = model_obj.save(
-                        model_name=f"{task.entry}.model")
+                    model_path = model_obj.save(model_name=f"{task.entry}.model")
                     model = Model(index=i, entry=task.entry,
                                 model=model_path, result=res)
 
-                model.meta_attr = [t.meta_attr for t in task.tasks]#['all']
+                model.meta_attr = [t.meta_attr for t in task.tasks] # 利用该任务数据的元属性对当前对应任务模型的元属性进行赋值（即embedding extraction阶段的平均任务表征）
             task.model = model
-            #print("----------------here2-------------------")
             self.seen_models.append(model)
             feedback[task.entry] = model.result
-            self.seen_task_groups.append(task)#将训练好的task加入seen_task_groups
+            self.seen_task_groups.append(task) # 将训练好的任务加入seen_task_groups
 
         if len(rare_task):
             #print("----------------here3-------------------")
@@ -346,15 +353,21 @@ class SeenTaskLearning:
                 self.seen_task_groups[i] = task
 
         task_index = {
-            self.extractor_key: self.seen_extractor,#self.seen_extractor: {'all': 0}
-            self.task_group_key: self.seen_task_groups#self.seen_task_groups: [<sedna.algorithms.seen_task_learning.artifact.TaskGroup object at 0x7f22387d4730>]
+            self.extractor_key: self.seen_extractor, # self.seen_extractor: {'all': 0}
+            self.task_group_key: self.seen_task_groups # self.seen_task_groups: [<sedna.algorithms.seen_task_learning.artifact.TaskGroup object at 0x7f22387d4730>]
         }
 
+        # 进行训练后的evaluation
+        # pdb.set_trace()
         if valid_data:
+            print("------------------ 4. processing evaluation after training! ------------------")
             feedback, _ = self.evaluate(valid_data, **kwargs)
-        return feedback, task_index
+            print("------------------ 4. evaluation after training finished! ------------------")
 
-    def _task_embedding(self, samples, **kwargs):
+        return feedback, task_index
+        # return 0, task_index
+
+    def _task_embedding_and_source_model_training(self, samples, **kwargs):
         """
         Task embedding extraction of samples
         """
@@ -362,27 +375,29 @@ class SeenTaskLearning:
         y_data = samples.y
 
         model_obj = set_backend(estimator=self.base_model)
-        
-        #import pdb
-        #pdb.set_trace()
-        
+
+        import pdb
+        # pdb.set_trace()
+
+        ########## 提取训练数据情境表征 ##########
+        kwargs["app"] = "embedding_extraction"
+
+        # 利用可插拔网络进行情境表征提取
+        task_embeddings = self._task_definition(x_data, **kwargs) 
+        # _, task_embeddings = model_obj.predict(x_data, **kwargs) # 调用basemodel的extract,再调用RFNet的eval，最终提取样本的情境表征
+
+        # pdb.set_trace()
+        ########## 训练全局模型 ##########
         if kwargs["mode"]=="train":
-            res = model_obj.train(train_data=samples, **kwargs)#res: 'e1/RFNet/experiment_2/checkpoint_1689064409.00798.pth'
-            kwargs["model_url"]=res
+            print("------------------ 2. processing global model training! ------------------")
+            res = model_obj.train(train_data=samples, **kwargs) # res: 'e1/RFNet/experiment_2/checkpoint_1689064409.00798.pth'
+            kwargs["model_url"] = res
+            print("------------------ 2. global model training finished, the according path is %s! ------------------"%(res))
             #kwargs["model"]="source_model"
             #model_obj.load(res, **kwargs)
             #self.global_model_url=res
-        
-        # for key, value in kwargs.items():
-        #     print("key: {}, and value: {}".format(key, value))
-        kwargs["app"] = "embedding_extraction"
-        
-        #pdb.set_trace()
-
-        _, task_embeddings = model_obj.predict(x_data, **kwargs) #调用basemodel的extract,再调用RFNet的eval，最终提取样本的情境表征
-
-        #import pdb
-        #pdb.set_trace()
+            # for key, value in kwargs.items():
+            #     print("key: {}, and value: {}".format(key, value))
 
         if kwargs["mode"]=="train":
             return res, task_embeddings
@@ -415,15 +430,16 @@ class SeenTaskLearning:
             task extractor model path, used for task allocation.
         """
 
+        import pdb
+        # pdb.set_trace()
 
         # 数据情境表征
         kwargs["mode"]="train"
-        source_model_url, task_embeddings = self._task_embedding(train_data, **kwargs)
+        source_model_url, task_embeddings = self._task_embedding_and_source_model_training(train_data, **kwargs)
 
-        import pdb
-        #pdb.set_trace()
+        kwargs["app"] = "task_defination"
         kwargs["task_embeddings"] = task_embeddings
-        #train_data:<sedna.datasources.TxtDataParse object at 0x7f9b24130580>
+        # train_data:<sedna.datasources.TxtDataParse object at 0x7f9b24130580>
         tasks, task_extractor, train_data = self._task_definition(
             train_data, model=self.base_model, **kwargs)# tasks, task_extractor, train_data: ([<sedna.algorithms.seen_task_learning.artifact.Task object at 0x7f22387d4790>], {'all': 0}, <sedna.datasources.TxtDataParse object at 0x7f22387d43a0>)
         self.seen_extractor = task_extractor
@@ -434,6 +450,7 @@ class SeenTaskLearning:
             callback = ClassFactory.get_cls(ClassType.CALLBACK, post_process)()
         self.seen_task_groups = []
 
+        # pdb.set_trace()
         return self._task_process(
             task_groups, source_model_url,
             train_data=train_data,
@@ -473,8 +490,8 @@ class SeenTaskLearning:
                 model_obj = set_backend(estimator=self.base_model)
                 import pdb  
                 ##pdb.set_trace()
-                model_obj.load(_task.model)#_task.model是个pth地址（'./workspace/benchmarkingjob/rfnet_lifelong_learning/fa1bbcbe-1442-11ee-ba17-a906087290a8/output/train/1/seen_task/semantic_segamentation_model.pth'）
-                res = model_obj.train(train_data=task.samples)#res也是一个pth地址'cityscapes/RFNet/experiment_10/checkpoint_1688482376.3739052.pth'
+                model_obj.load(_task.model) # _task.model是个pth地址（'./workspace/benchmarkingjob/rfnet_lifelong_learning/fa1bbcbe-1442-11ee-ba17-a906087290a8/output/train/1/seen_task/semantic_segamentation_model.pth'）
+                res = model_obj.train(train_data=task.samples) # res也是一个pth地址'cityscapes/RFNet/experiment_10/checkpoint_1688482376.3739052.pth'
                 if isinstance(res, str):
                     model_path = model_obj.save(
                         model_name=f"{task.entry}.pth")
@@ -548,56 +565,57 @@ class SeenTaskLearning:
         if not (self.seen_models and self.seen_extractor):
             self.load(kwargs.get("task_index", None))
 
-        # 测试数据情境表征
+        # 测试数据的任务情境表征
         kwargs["mode"]="eval"
-        kwargs["model_url"] = self.seen_models[0].model #模型地址
-        task_embeddings = self._task_embedding(data, **kwargs)
-        
+        # kwargs["model_url"] = self.seen_models[0].model #模型地址
+        task_embeddings = self._task_embedding_and_source_model_training(data, **kwargs)
+
         import pdb
-        #pdb.set_trace()
-        
+        # pdb.set_trace()
+
         kwargs["task_embeddings"] = task_embeddings
         kwargs["seen_models"] = self.seen_models
-        data, mappings = self._task_allocation(samples=data, **kwargs)#data.x: array([['/data/user8302433/fc/dataset/curb-detection/train_data/images/real_aachen_000015_000019_leftImg8bit.png']],dtype='<U103'), mappings: [0] 这个是在确定每一张样本的任务索引，返回一个对应列表
+        data, mappings = self._task_allocation(samples=data, **kwargs) # 返回测试样本和其对应被分配的任务序号
 
         samples, models = self._task_remodeling(samples=data,
-                                                mappings=mappings
-                                                )#返回的samples是一个列表，每个列表元素是一个类，包含一个特定任务的所有样本；models是一个列表，每个元素是一个类，对应samples每个特定任务的特定方法
+                                                mappings=mappings) # samples是一个列表，每个列表元素是一个类：指一个特定任务的所有测试样本（本质就是task_allocation的结果，从单个任务的角度进行组织）；models是一个列表，每个列表元素是一个类：指一个特定任务的对应模型
 
         callback = None
         if post_process:
             callback = ClassFactory.get_cls(ClassType.CALLBACK, post_process)()
 
         tasks = []
-        for inx, df in enumerate(samples):#依次按照每个特定任务类型读取其包含的所有样本
-            m = models[inx]#读取对应模型
+        for inx, df in enumerate(samples): # 按照每个任务读取其包含的所有样本
+            m = models[inx] # 读取对应模型
             if not isinstance(m, Model):
                 continue
-            if isinstance(m.model, str):       #m.model: '/data/user8302433/fc/Ianvs-master/sednas/seen_task/semantic_segamentation_model.pth'
+            if isinstance(m.model, str):
                 import pdb
-                #pdb.set_trace()
+                # pdb.set_trace()
                 evaluator = set_backend(estimator=self.base_model)
                 # pdb.set_trace()
-                #evaluator.load(m.model)
-                kwargs["model_url"]=m.model
+                # evaluator.load(m.model)
+                kwargs["model_url"] = m.model
             else:
                 evaluator = m.model
                 
             import pdb
-            #pdb.set_trace()
+            # pdb.set_trace()
                 
-            pred = evaluator.predict(df.x, **kwargs)#调用basemodel的predict，进一步调用eval文件里的predict。返回预测结果矩阵pred
+            pred = evaluator.predict(df.x, **kwargs) # 调用basemodel的predict，进一步调用eval文件里的predict。返回预测结果矩阵pred
 
             if callable(callback):
                 pred = callback(pred, df)
+            # 将每个任务的测试样本预测结果、对应任务模型存储到tasks里
             task = Task(entry=m.entry, samples=df)
             task.result = pred
             task.model = m
             tasks.append(task)
+
+        # 提炼结果
+        # pdb.set_trace()
         res = self._inference_integrate(tasks)
-        
-        
-        
+
         return res, tasks
 
     def evaluate(self, data: BaseDataSource,
@@ -671,31 +689,29 @@ class SeenTaskLearning:
             metrics_param = self._parse_param(metrics_param)
         tasks_detail = []
 
+        ############## 以task为单位，通过对比每个任务中各个样本的预测结果（task.result）和真实标签（task.samples.y)来计算精度（scores）并保存到task数据结构中 ##############
         for task in tasks:
-            
-            
             image_arrays = []
             for path in task.samples.y:
                 image = Image.open(path)
                 image_array = np.expand_dims(np.array(image), axis=0)
                 image_arrays.append(image_array)
 
-            #m_dict: {'precision_score': <function precision_score at 0x7fbc920cc8b0>}
-            #metrics_param: {'average': 'micro'}
+            # m_dict: {'precision_score': <function precision_score at 0x7fbc920cc8b0>}
+            # metrics_param: {'average': 'micro'}
             pred = task.result
-            pred=np.concatenate(pred).flatten().astype(np.int32)
-            pred=np.where(np.logical_or(np.logical_or(pred == 0, pred == 1), np.logical_or(pred == 19, pred == 21)), pred, 255)
-            
-            
+            pred = np.concatenate(pred).flatten().astype(np.int32)
+            pred = np.where(np.logical_or(np.logical_or(pred == 0, pred == 1), np.logical_or(pred == 19, pred == 21)), pred, 255)
+
             import pdb
-            #pdb.set_trace()
+            # pdb.set_trace()
 
             '''scores = {
                 name: metric(np.concatenate(image_arrays).flatten().astype(np.int32), pred, **metrics_param) for name, metric in m_dict.items()
             }'''
-            
-            scores = {'precision_score': self.calculate_precision_score(pred,np.concatenate(image_arrays).flatten().astype(np.int32))}
-            
+
+            scores = {'precision_score': self.calculate_precision_score(pred, np.concatenate(image_arrays).flatten().astype(np.int32))}
+
             task.scores = scores
             tasks_detail.append(task)
             
@@ -703,7 +719,7 @@ class SeenTaskLearning:
             name: metric(data.y, result, **metrics_param)
             for name, metric in m_dict.items()
         }'''
-        task_eval_res=scores#{'precision_score': self.calculate_precision_score(data.y,np.concatenate(result).flatten().astype(np.int32))}
+        task_eval_res = scores # {'precision_score': self.calculate_precision_score(data.y,np.concatenate(result).flatten().astype(np.int32))}，但这样算似乎只是最后一个task的精度？
         
         return task_eval_res, tasks_detail
     

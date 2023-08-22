@@ -267,24 +267,26 @@ class LifelongLearning(JobBase):
                 ClassType.CALLBACK, post_process)
 
         import pdb
-        #pdb.set_trace()
-        
-        res, seen_task_index = self.estimator.train(#跳到/data/user8302433/anaconda3/envs/new_ianvs/lib/python3.8/site-packages/sedna/algorithms/seen_task_learning/seen_task_learning.py(365)
+        # pdb.set_trace()
+
+        # 跳到/data/user8302433/anaconda3/envs/new_ianvs/lib/python3.8/site-packages/sedna/algorithms/seen_task_learning/seen_task_learning.py(404)
+        res, seen_task_index = self.estimator.train(
             train_data=train_data,
             valid_data=valid_data,
             **kwargs
         )  # todo: Distinguishing incremental update and fully overwrite
+        # pdb.set_trace()
         
-        #res：{'semantic_segamentation_model': {}}
-        #seen_task_index：{'extractor': {'all': 0}, 'task_groups': [<sedna.algorithms.seen_task_learning.artifact.TaskGroup object at 0x7fe700350550>]}
+        # res：{'semantic_segamentation_model': {}}
+        # seen_task_index：{'extractor': {'all': 0}, 'task_groups': [<sedna.algorithms.seen_task_learning.artifact.TaskGroup object at 0x7fe700350550>]}
 
         unseen_res, unseen_task_index = self.unseen_task_processing.initialize()
-        #unseen_res:{},   unseen_task_index: {'extractor': None, 'task_groups': []}
+        # unseen_res:{},   unseen_task_index: {'extractor': None, 'task_groups': []}
 
         task_index = dict(
             seen_task=seen_task_index,
             unseen_task=unseen_task_index)
-        #task_index:  {'seen_task': {'extractor': {'all': 0}, 'task_groups': [<sedna.algorithms.seen_task_learning.artifact.TaskGroup object at 0x7fe700350550>]}, 'unseen_task': {'extractor': None, 'task_groups': []}}
+        # task_index:  {'seen_task': {'extractor': {'all': 0}, 'task_groups': [<sedna.algorithms.seen_task_learning.artifact.TaskGroup object at 0x7fe700350550>]}, 'unseen_task': {'extractor': None, 'task_groups': []}}
 
         cloud_knowledge_management = self.get_cloud_knowledge_management()
         task_index_url = FileOps.dump(
@@ -294,8 +296,8 @@ class LifelongLearning(JobBase):
             task_index_url, self.kb_server, local_test=self.local_test)
 
         if self.local_test:
-            print("Lifelong learning Train task Finished, KB index save in ",task_index)
-            #task_index: './workspace/benchmarkingjob/rfnet_lifelong_learning/d7c3998e-135c-11ee-be1c-45d24106221e/output/train/1/index.pkl'
+            print("Lifelong learning Train task Finished, KB index save in ", task_index)
+            # task_index: './workspace/benchmarkingjob/rfnet_lifelong_learning/d7c3998e-135c-11ee-be1c-45d24106221e/output/train/1/index.pkl'
             return task_index
 
         res.update(unseen_res)
@@ -342,12 +344,12 @@ class LifelongLearning(JobBase):
         FileOps.download(task_index_url, index_url)
         
         import pdb
-        #pdb.set_trace()
+        # pdb.set_trace()
 
         unseen_sample_re_recognition = ClassFactory.get_cls(ClassType.UTD, self.unseen_sample_re_recognition["method"])(index_url, **self.unseen_sample_re_recognition_param)
 
-        seen_samples, unseen_samples = unseen_sample_re_recognition(train_data)#对已经划分过的样本（unseen）再进行一次划分
-            #train_data：7张，seen_samples：3张，unseen_samples：4张
+        seen_samples, unseen_samples = unseen_sample_re_recognition(train_data) # 对已经划分过的样本（unseen）再进行一次划分
+            # train_data：7张，seen_samples：3张，unseen_samples：4张
         # TODO: retrain temporarily
         # historical_data = self._fetch_historical_data(index_url)
         # seen_samples.x = np.concatenate(
@@ -355,7 +357,7 @@ class LifelongLearning(JobBase):
         # seen_samples.y = np.concatenate(
         #     (historical_data.y, seen_samples.y, unseen_samples.y), axis=0)
 
-        seen_samples.x = np.concatenate(#划分出来以后又合并？？？
+        seen_samples.x = np.concatenate( # 划分出来以后又合并？
             (seen_samples.x, unseen_samples.x), axis=0)
         seen_samples.y = np.concatenate(
             (seen_samples.y, unseen_samples.y), axis=0) # 最后全部又都放到了seen_samples
@@ -365,9 +367,9 @@ class LifelongLearning(JobBase):
             index_url, **self.task_update_decision_param) 
 
         #####
-        tasks, task_update_strategies = task_update_decision(#确定每一种任务的更新策略
+        tasks, task_update_strategies = task_update_decision( # 确定每一种任务的更新策略
             seen_samples, task_type="seen_task") # 为每一个initial_train时创造的任务分配当前round样本——类似于task_allocation的操作
-        seen_task_index = cloud_knowledge_management.estimator.update(#执行每一种任务的更新策略 #跳到seentasklearning的update里
+        seen_task_index = cloud_knowledge_management.estimator.update( # 执行每一种任务的更新策略 #跳到seentasklearning的update里
             tasks, task_update_strategies, task_index=index_url) # 基于上一步分配的样本，对每个任务的对应模型进行训练
 
         # seen_task_index怎么变sim、real了？unseen_task_processing.update做了什么？为啥这里还要把unseen分为seen和unseen，它们的作用是什么？
@@ -388,7 +390,7 @@ class LifelongLearning(JobBase):
             task_index, self.kb_server, local_test=self.local_test)
 
         if self.local_test:
-            return task_index#'./workspace/benchmarkingjob/rfnet_lifelong_learning/c330a7bc-1ade-11ee-ba17-a906087290a8/output/train/2/index.pkl'
+            return task_index # './workspace/benchmarkingjob/rfnet_lifelong_learning/c330a7bc-1ade-11ee-ba17-a906087290a8/output/train/2/index.pkl'
 
         task_info_res = self.estimator.model_info(
             task_index,
@@ -426,9 +428,9 @@ class LifelongLearning(JobBase):
         task_index_url = Context.get_parameters(
             "MODEL_URLS", cloud_knowledge_management.task_index)
         index_url = cloud_knowledge_management.local_task_index_url
-        #task_index_url,index_url:('./workspace/benchmarkingjob/rfnet_lifelong_learning/7372fa4a-135e-11ee-be1c-45d24106221e/output/train/1/index.pkl', 'index.pkl')
+
         import pdb
-        #pdb.set_trace()
+        # pdb.set_trace()
         self.log.info(
             f"Download kb index from {task_index_url} to {index_url}")
         FileOps.download(task_index_url, index_url)
@@ -436,9 +438,11 @@ class LifelongLearning(JobBase):
         
         res, index_file = self._task_evaluation(
             cloud_knowledge_management, data, task_index=index_url, **kwargs)
+        # res, index_file = self._task_evaluation(
+        #     cloud_knowledge_management, data, task_index=task_index_url, **kwargs)
         self.log.info("Task evaluation finishes.")
-        #cloud_knowledge_management.task_index: './workspace/benchmarkingjob/rfnet_lifelong_learning/c42936c2-1361-11ee-be1c-45d24106221e/output/eval/1/index.pkl'
-        FileOps.upload(index_file, cloud_knowledge_management.task_index)#实际上就是返回dst的地址，并删除原来的文件（src）。即用cloud_knowledge_management.task_index覆盖index_file内容
+        # cloud_knowledge_management.task_index: './workspace/benchmarkingjob/rfnet_lifelong_learning/c42936c2-1361-11ee-be1c-45d24106221e/output/eval/1/index.pkl'
+        FileOps.upload(index_file, cloud_knowledge_management.task_index) # 实际上就是返回dst的地址，并删除原来的文件（src）。即用cloud_knowledge_management.task_index覆盖index_file内容
         self.log.info(
             f"upload kb index from {index_file} to {cloud_knowledge_management.task_index}")
 
@@ -479,17 +483,12 @@ class LifelongLearning(JobBase):
         res, tasks, is_unseen_task = None, [], False
         task_index_url = Context.get_parameters(
             "MODEL_URLS", self.cloud_knowledge_management.task_index)
-        index_url = self.edge_knowledge_management.task_index
-        
+        index_url = self.edge_knowledge_management.task_index # 这个地址在local测试中有误，不能被直接使用，不同于evaluate()
+
         import pdb
-        #pdb.set_trace()
-        #task_index_url， index_url： ('./workspace/benchmarkingjob/rfnet_lifelong_learning/c59e1986-1367-11ee-be1c-45d24106221e/output/eval/1/index.pkl', '/var/lib/sedna/kb/index.pkl')
-        if not FileOps.exists(index_url):
-            import pdb
-            #pdb.set_trace()
-            
-            #index_url="/data/user8302433/fc/Ianvs-master/taskmodel"#????????????
-            
+        # pdb.set_trace()
+        # task_index_url， index_url： ('./workspace/benchmarkingjob/rfnet_lifelong_learning/c59e1986-1367-11ee-be1c-45d24106221e/output/eval/1/index.pkl', '/var/lib/sedna/kb/index.pkl')
+        if not FileOps.exists(index_url):          
             FileOps.download(task_index_url, index_url)
             self.log.info(
                 f"Download kb index from {task_index_url} to {index_url}")
@@ -497,51 +496,67 @@ class LifelongLearning(JobBase):
             self.edge_knowledge_management.update_kb(index_url)
             self.log.info(f"Tasks are deployed at the edge.")
 
-        unseen_sample_recognition = ClassFactory.get_cls(     #/data/user8302433/anaconda3/envs/new_ianvs/lib/python3.8/site-packages/sedna/algorithms/unseen_task_detection/unseen_sample_recognition/unseen_sample_recognition.py(27)__call__()
+        unseen_sample_recognition = ClassFactory.get_cls(     # /data/user8302433/anaconda3/envs/new_ianvs/lib/python3.8/site-packages/sedna/algorithms/unseen_task_detection/unseen_sample_recognition/unseen_sample_recognition.py(27)__call__()
             ClassType.UTD,
             self.unseen_sample_recognition["method"])(
             self.edge_knowledge_management.task_index,
             **self.unseen_sample_recognition_param)
-            
-        import pdb
-        ###pdb.set_trace()
 
-        seen_samples, unseen_samples = unseen_sample_recognition(     #先划分seen和unseen样本，再在两组样本下进一步各自划分多个任务 #目前的划分方法是随机划分（一半一半的划）.所以！！！未知样本识别和任务分配是两个不同的事情
-            data, **kwargs)
-        if unseen_samples.x is not None and len(unseen_samples.x) > 0: #对未知样本进行推理-------------------------------------------------------------------
+        seen_samples, unseen_samples = unseen_sample_recognition(
+            data, **kwargs) # 先划分seen和unseen样本，再在两组样本下进一步各自划分多个任务 # 目前的划分方法是随机划分（一半一半概率）
+
+        import pdb
+        # pdb.set_trace()
+
+        # 当前版本每次data都只包含一个样本（data.num_examples()==1），所以其要么是unseen的要么是seen的。但是我不太知道对unseen data的预测为什么选取的是一个未训练的初始模型，这会影响results。
+        # 所以，我将对unseen data的predict也替换成了seen data的predict。
+        # 注意：以上过程并不会影响unseen_sample_recognition，即不会影响当前样本是否是unseen的判断。
+        # 对未知样本进行predict-------------------------------------------------------------------
+        if unseen_samples.x is not None and len(unseen_samples.x) > 0:
             self.edge_knowledge_management.log.info(
                 f"Unseen task is detected.")
-            
-            #pdb.set_trace()
-            
-            unseen_res, unseen_tasks = self.unseen_task_processing.predict(
-                self.edge_knowledge_management,
-                unseen_samples,
-                task_index=self.edge_knowledge_management.task_index)
+
+            # 原来的unseen data predict
+            # unseen_res, unseen_tasks = self.unseen_task_processing.predict(
+            #     self.edge_knowledge_management,
+            #     unseen_samples,
+            #     task_index=self.edge_knowledge_management.task_index)
+            # 替换成seen data predict一样的模式，这只会影响results，其它的都不会影响
+            unseen_res, unseen_tasks = self.edge_knowledge_management.estimator.predict(
+                data=unseen_samples, post_process=post_process,
+                task_index=task_index_url,
+                task_type="unseen_task",
+                **kwargs
+            )
 
             self.edge_knowledge_management.save_unseen_samples(unseen_samples, post_process=post_process)
 
             res = unseen_res
             tasks.extend(unseen_tasks)
-            if data.num_examples() == 1:#说明所有样本数量为1，由502行可知len(unseen_samples.x) > 0，所以可得所有样本都是unseen_samples
-                is_unseen_task = True#意思是所有样本都是unseen
+            if data.num_examples() == 1:
+                is_unseen_task = True
             else:
                 image_names = list(map(lambda x: x[0], unseen_samples.x))
-                is_unseen_task = dict(zip(image_names, [True] * unseen_samples.num_examples()))#意思是部分样本是unseen，所以将unseen样本标记一下
+                is_unseen_task = dict(zip(image_names, [True] * unseen_samples.num_examples())) # 意思是部分样本是unseen，所以将unseen样本标记一下，但是当前data.num_examples()一直是1
 
-        if seen_samples.x is not None and len(seen_samples.x) > 0: #对已知样本进行推理---------------------------------------------------------------------
-            pdb.set_trace()
-            
-            seen_res, seen_tasks = self.edge_knowledge_management.estimator.predict(#已知样本的推理包含任务分配过程（当前的任务分配是all方法，即所有样本全分到一种任务）
+        # 对已知样本进行predict---------------------------------------------------------------------
+        if seen_samples.x is not None and len(seen_samples.x) > 0:        
+            # seen_res, seen_tasks = self.edge_knowledge_management.estimator.predict(
+            #     data=seen_samples, post_process=post_process,
+            #     task_index=index_url,
+            #     task_type="seen_task",
+            #     **kwargs
+            # )
+            seen_res, seen_tasks = self.edge_knowledge_management.estimator.predict(
                 data=seen_samples, post_process=post_process,
-                task_index=index_url,
+                task_index=task_index_url, # local测试时不能用index_url
                 task_type="seen_task",
                 **kwargs
             )
-            res = np.concatenate((res, seen_res)) if res else seen_res
-            tasks.extend(seen_tasks)#seen_tasks: [<sedna.algorithms.seen_task_learning.artifact.Task object at 0x7fc95caa6670>];    seen_tasks[0].model.meta_attr: ['all']
 
-            if data.num_examples() > 1:# =1的话说明所有样本都是seen，就不用管is_unseen_task了
+            res = np.concatenate((res, seen_res)) if res else seen_res
+            tasks.extend(seen_tasks) # seen_tasks: [<sedna.algorithms.seen_task_learning.artifact.Task object at 0x7fc95caa6670>];    seen_tasks[0].model.meta_attr: ['all']
+            if data.num_examples() > 1:
                 image_names = list(map(lambda x: x[0], seen_samples.x))
                 is_unseen_dict = dict(zip(image_names, [False] * seen_samples.num_examples()))
                 if isinstance(is_unseen_task, bool):
@@ -553,7 +568,7 @@ class LifelongLearning(JobBase):
 
     def _task_evaluation(self, cloud_knowledge_management, data, **kwargs):
         import pdb
-        #pdb.set_trace()
+        # pdb.set_trace()
         res, tasks_detail = cloud_knowledge_management.estimator.evaluate(
             data=data, **kwargs)
         drop_task = cloud_knowledge_management.evaluate_tasks(
